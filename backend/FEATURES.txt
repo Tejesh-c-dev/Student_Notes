@@ -1,0 +1,97 @@
+Backend Features
+================
+
+1. Core Server and Infrastructure
+- Express server setup with JSON body parsing and CORS configured for frontend origin http://localhost:5173.
+- MongoDB connection through Mongoose at startup using a single MONGODB_URI string.
+- Centralized error middleware for uniform JSON error responses.
+
+2. Authentication and Account Management
+- User registration endpoint with validation:
+  - required username, email, password, confirm password
+  - email format check
+  - password match check
+  - strong-password policy (minimum 8 chars, uppercase, lowercase, number, symbol)
+  - duplicate email protection
+- Password hashing with bcrypt before storing user records.
+- Login endpoint with credential verification and JWT issuance.
+- JWT token generation with configurable expiry (default 7 days).
+- Change-password endpoint with old-password verification and strong new-password validation.
+
+3. Authorization and Security
+- JWT auth middleware for protected routes using Bearer token format.
+- Protected resource ownership checks in note, quiz, and doubt operations.
+- Access control for quiz visibility:
+  - owners can access private quizzes
+  - non-owners can only access public quizzes
+
+4. Notes Module (/api/notes)
+- Create note (title and content required).
+- List authenticated user's notes sorted by latest first.
+- Get single note scoped to authenticated user.
+- Delete single note scoped to authenticated user.
+
+5. Quiz Module (/api/quizzes)
+- Quiz creation with schema and controller validation:
+  - required title/category/difficulty/questions
+  - at least one question
+  - each question must have at least 2 options
+  - each question must have exactly 1 correct option
+- Quiz listing:
+  - get user's own quizzes
+  - get all public quizzes
+  - filter by category and difficulty
+  - paginated response with page metadata
+- Quiz retrieval by ID with conditional masking of correct answers for non-owners.
+- Quiz update (owner only) for controlled set of fields.
+- Quiz deletion (owner only) with cascade cleanup of quiz attempts.
+- Quiz attempt lifecycle:
+  - start attempt (creates in-progress attempt record)
+  - submit attempt with answer evaluation and scoring
+  - per-question correctness and explanation in response
+  - percentage computation and time tracking
+- Quiz analytics:
+  - per-quiz attempts history for user
+  - user statistics (attempt count, total score, total points, average percentage, quizzes created)
+  - category-wise performance aggregation
+- Quiz aggregate stats maintenance:
+  - totalAttempts increment
+  - averageScore recalculation after submissions
+
+6. Doubt Solving Module (/api/doubts)
+- Doubt creation with required title/description/category and tag normalization.
+- Doubt feed with filters and controls:
+  - category filter
+  - status filter
+  - search across title/description/tags
+  - sorting by recent/popular/unanswered
+  - pagination metadata
+- My doubts listing for authenticated user with pagination.
+- Get doubt by ID with populated usernames and automatic view counter increment.
+- Update doubt (owner only) with edit restriction once answers exist.
+- Delete doubt (owner only).
+- Answer management:
+  - add answer
+  - update answer (answer owner only)
+  - delete answer (answer owner or doubt owner)
+  - accept answer (doubt owner only)
+- Doubt status progression:
+  - open -> answered when first answer is posted
+  - resolved when an answer is accepted
+- Voting system:
+  - upvote/downvote on doubts
+  - upvote/downvote on answers
+  - single active vote per user (previous vote replaced)
+- Doubt statistics endpoint for authenticated user:
+  - total doubts, resolved doubts, open doubts
+  - total answers given, accepted answers, helpful rate percentage
+
+7. Data Modeling and Query Optimization Basics
+- Dedicated Mongoose models: User, Note, Quiz, QuizAttempt, Doubt, Answer, and Vote.
+- Validation constraints in schemas for quiz and doubt domain rules.
+- Useful indexes for common query patterns in quizzes, doubts, and attempts.
+- Virtual fields such as net votes, answer count, and quiz total points.
+
+8. Public Utility Endpoints
+- Basic public page endpoints for home, notes, quiz, and PYQs placeholders.
+- Public auth endpoints for login/register/change-password under /api.
