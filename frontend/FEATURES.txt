@@ -1,0 +1,119 @@
+Frontend Features
+=================
+
+1. Application Structure and Routing
+- React + React Router single-page application setup.
+- Global routing for pages:
+  - Home
+  - Notes
+  - Quiz
+  - Doubts
+  - PYQs
+  - Login
+  - Register
+- Persistent top navigation bar across pages.
+
+2. Authentication State Management
+- Auth context provider with global auth state.
+- Session persistence via localStorage (user object and token restored on reload).
+- Auth helpers exposed to components:
+  - login
+  - logout
+  - isAuthenticated
+  - loading state guard before rendering children
+
+3. API Integration Layer
+- Centralized API service module with grouped clients:
+  - authAPI
+  - notesAPI
+  - quizAPI
+  - doubtAPI
+- Automatic Authorization header injection using stored JWT token.
+- Consistent response error handling and message propagation for UI.
+
+4. Navigation and Header UX
+- Navbar with route links for core sections.
+- Authentication-aware header actions:
+  - logged-out users see Login/Register
+  - logged-in users see greeting and Logout button
+- Programmatic logout redirect to home.
+
+5. Home Page
+- Landing page with feature highlights for notes, quizzes, doubts, and PYQs.
+- Informational sections (value proposition, counters, call-to-action, updates, contact panel).
+
+6. Login and Registration
+- Login form with loading and error states.
+- Successful login stores token and user details in auth context/localStorage and navigates to home.
+- Registration form with client-side checks:
+  - terms acceptance required
+  - password and confirm-password match
+- Registration success message with delayed redirect to login.
+
+7. Notes Experience
+- Fetch and render user's notes from backend.
+- Search notes by title or content (client-side filtering).
+- Create note workflow with toggleable form and validation.
+- Delete note with confirmation prompt.
+- Loading, empty, and error states handled in UI.
+- Authentication-aware UI labels and actions.
+
+8. Quiz Experience
+- Full quiz workflow in one page with multiple views:
+  - browse
+  - create
+  - take
+  - results
+- Browse features:
+  - tabs for public quizzes vs my quizzes
+  - filters for category and difficulty
+  - stats dashboard (attempts, average score, created quizzes, total points)
+- Quiz creation features:
+  - dynamic questions list
+  - dynamic options per question
+  - mark exactly one correct option via radio control
+  - optional explanation and points per question
+  - public/private quiz toggle
+  - configurable time limit
+- Quiz taking features:
+  - start attempt from list
+  - per-question navigation
+  - answer selection tracking
+  - optional countdown timer with auto-submit on timeout
+- Quiz submission and results:
+  - score and percentage display
+  - time taken display
+  - question-by-question review (your answer, correct answer, correctness, explanation)
+- Delete own quizzes from My Quizzes tab.
+
+9. Doubt Solving Experience
+- Multi-view doubt module:
+  - browse
+  - create
+  - detail
+- Browse features:
+  - tabs for all questions and my questions
+  - search by keyword
+  - category filter
+  - sort by recent/popular/unanswered
+  - per-user stats cards (questions asked, resolved, answers given, helpful rate)
+- Create doubt form with title, description, category, and comma-separated tags.
+- Detail view features:
+  - full doubt content and metadata
+  - vote on doubt
+  - view count display
+  - status/category/tag badges
+  - answer list sorted with accepted answers prioritized
+  - vote on answers
+  - add answer
+  - accept answer (owner flow)
+  - delete own doubt or answers per permissions
+
+10. PYQs Section
+- Dedicated PYQs page with coming-soon placeholder and call-to-action button.
+
+11. Reusable UX Patterns
+- Confirmation prompts for destructive actions.
+- Loading spinners and disabled button states during async operations.
+- In-page dismissible error banners.
+- Responsive layouts using utility-first styling classes.
