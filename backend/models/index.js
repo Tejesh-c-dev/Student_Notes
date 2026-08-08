@@ -6,6 +6,9 @@ const Doubt = require('./Doubt');
 const Answer = require('./Answer');
 const Vote = require('./Vote');
 const PYQ = require('./PYQ');
+const Like = require('./Like');
+const Bookmark = require('./Bookmark');
+const Comment = require('./Comment');
 
 const models = {
   User,
@@ -15,7 +18,10 @@ const models = {
   Doubt,
   Answer,
   Vote,
-  PYQ
+  PYQ,
+  Like,
+  Bookmark,
+  Comment
 };
 
 module.exports = {

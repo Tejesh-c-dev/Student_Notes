@@ -26,9 +26,13 @@ Backend Features
   - non-owners can only access public quizzes
 
 4. Notes Module (/api/notes)
-- Create note (title and content required).
-- List authenticated user's notes sorted by latest first.
-- Get single note scoped to authenticated user.
+- Create note (title and content required) with visibility (private default, public opt-in).
+- List authenticated user's notes sorted by latest first (private and public).
+- Public community feed of notes shared by other students, newest first, with author usernames.
+- Get single note if owned by user or shared publicly; access enforced at the query level ($or owner/public), so another user's private note returns 404 and is never fetched.
+  Response populates author with only safe fields (id, username) — password, password hash, authentication tokens, and private user fields are never included.
+- Owner can toggle a note between private and public after creation.
+- Owner can edit their own note (title always; content for text notes, external URL for link notes).
 - Delete single note scoped to authenticated user.
 
 5. Quiz Module (/api/quizzes)

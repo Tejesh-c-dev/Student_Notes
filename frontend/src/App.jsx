@@ -1,7 +1,9 @@
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import Home from "./services/pages/Home";
+import NoteDetail from "./services/pages/NoteDetail";
 import Notes from "./services/pages/Notes";
+import PublicNotes from "./services/pages/PublicNotes";
 import Quiz from "./services/pages/Quiz";
 import PYQs from "./services/pages/PYQs";
 import Doubts from "./services/pages/Doubts";
@@ -22,6 +24,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/notes" element={<Notes />} />
+        <Route path="/notes/:id" element={<NoteDetail />} />
+        <Route path="/public-notes" element={<PublicNotes />} />
         <Route path="/quiz" element={<Quiz />} />
         <Route path="/pyqs" element={<PYQs />} />
         <Route path="/doubts" element={<Doubts />} />

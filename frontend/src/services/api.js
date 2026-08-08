@@ -111,6 +111,18 @@ export const notesAPI = {
     return data;
   },
 
+  // List public notes shared by other students
+  getPublicNotes: async () => {
+    const response = await fetch(`${API_BASE_URL}/notes/public`, {
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch public notes');
+    }
+    return data;
+  },
+
   getNote: async (id) => {
     const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
       headers: getAuthHeaders()
@@ -122,11 +134,11 @@ export const notesAPI = {
     return data;
   },
 
-  createNote: async (title, content) => {
+  createNote: async (title, content, visibility = 'private') => {
     const response = await fetch(`${API_BASE_URL}/notes`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ title, content }),
+      body: JSON.stringify({ title, content, visibility }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -135,10 +147,11 @@ export const notesAPI = {
     return data;
   },
 
-  createNoteWithFile: async (title, file) => {
+  createNoteWithFile: async (title, file, visibility = 'private') => {
     const formData = new FormData();
     formData.append('title', title);
     formData.append('file', file);
+    formData.append('visibility', visibility);
 
     const user = localStorage.getItem('user');
     const headers = {};
@@ -159,15 +172,43 @@ export const notesAPI = {
     return data;
   },
 
-  createNoteWithExternal: async (title, fileUrl) => {
+  createNoteWithExternal: async (title, fileUrl, visibility = 'private') => {
     const response = await fetch(`${API_BASE_URL}/notes`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ title, fileUrl, attachmentType: 'external' }),
+      body: JSON.stringify({ title, fileUrl, attachmentType: 'external', visibility }),
     });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.message || 'Failed to create note with external link');
+    }
+    return data;
+  },
+
+  // Update a note's title/content/URL (owner only)
+  updateNote: async (id, updates) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || 'Failed to update note');
+    }
+    return result;
+  },
+
+  // Change a note's visibility (owner only)
+  updateNoteVisibility: async (id, visibility) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/visibility`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ visibility }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update note visibility');
     }
     return data;
   },
@@ -180,6 +221,83 @@ export const notesAPI = {
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.message || 'Failed to delete note');
+    }
+    return data;
+  },
+
+  // Toggle the current user's like on a note -> { liked, likeCount }
+  toggleLike: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/like`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update like');
+    }
+    return data;
+  },
+
+  // Toggle the current user's bookmark on a note -> { bookmarked, bookmarkCount }
+  toggleBookmark: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/bookmark`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update bookmark');
+    }
+    return data;
+  },
+
+  // List the current user's bookmarked notes
+  getBookmarks: async () => {
+    const response = await fetch(`${API_BASE_URL}/notes/bookmarks`, {
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch bookmarks');
+    }
+    return data;
+  },
+
+  // List comments on a note (must be an accessible note)
+  getComments: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/comments`, {
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch comments');
+    }
+    return data;
+  },
+
+  // Add a comment to a note
+  addComment: async (id, content) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/comments`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ content }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to add comment');
+    }
+    return data;
+  },
+
+  // Delete one of the current user's own comments
+  deleteComment: async (id, commentId) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${id}/comments/${commentId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to delete comment');
     }
     return data;
   },

@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { Link } from "react-router-dom";
 import { notesAPI, resolveFileUrl } from "../api";
 import { useAuth } from "../../context/AuthContext";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
@@ -33,14 +34,17 @@ const isGoogleDriveUrl = (url) => {
 const Notes = () => {
   // State for notes data
   const [notes, setNotes] = useState([]);
+  const [publicNotes, setPublicNotes] = useState([]);
+  const [bookmarkedNotes, setBookmarkedNotes] = useState([]);
+  const [activeTab, setActiveTab] = useState("my"); // "my", "bookmarked", or "community"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // State for note creation form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formMode, setFormMode] = useState("text"); // "text" or "pdf"
-  const [newNote, setNewNote] = useState({ title: "", content: "" });
+  const [newNote, setNewNote] = useState({ title: "", content: "", visibility: "private" });
   const [selectedFile, setSelectedFile] = useState(null);
   const [externalUrl, setExternalUrl] = useState("");
   const [creating, setCreating] = useState(false);
@@ -50,20 +54,35 @@ const Notes = () => {
   const [pdfPageNum, setPdfPageNum] = useState(1);
   const [pdfNumPages, setPdfNumPages] = useState(null);
     const [pdfError, setPdfError] = useState(null);
-  
+
+  // State for editing a note (owner only)
+  const [editingNote, setEditingNote] = useState(null);
+  const [editForm, setEditForm] = useState({ title: "", content: "", fileUrl: "" });
+
   const { isAuthenticated } = useAuth();
 
-  // Fetch notes on component mount
+  // Fetch notes on mount. The community feed and note APIs require login, so
+  // skip fetching when logged out.
   useEffect(() => {
-    fetchNotes();
-  }, []);
+    if (isAuthenticated) {
+      fetchNotes();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
 
-  // Fetches all notes from API
+  // Fetches the user's own notes and the community (public) feed
   const fetchNotes = async () => {
     try {
       setLoading(true);
-      const data = await notesAPI.getAllNotes();
-      setNotes(data);
+      const [myNotes, communityNotes, bookmarked] = await Promise.all([
+        notesAPI.getAllNotes(),
+        notesAPI.getPublicNotes(),
+        notesAPI.getBookmarks(),
+      ]);
+      setNotes(myNotes);
+      setPublicNotes(communityNotes);
+      setBookmarkedNotes(bookmarked);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -81,9 +100,9 @@ const Notes = () => {
 
     try {
       setCreating(true);
-      const createdNote = await notesAPI.createNote(newNote.title, newNote.content);
+      const createdNote = await notesAPI.createNote(newNote.title, newNote.content, newNote.visibility);
       setNotes([createdNote, ...notes]);
-      setNewNote({ title: "", content: "" });
+      setNewNote({ title: "", content: "", visibility: "private" });
       setExternalUrl("");
       setShowCreateForm(false);
       setFormMode("text");
@@ -104,9 +123,9 @@ const Notes = () => {
 
     try {
       setCreating(true);
-      const createdNote = await notesAPI.createNoteWithFile(newNote.title, selectedFile);
+      const createdNote = await notesAPI.createNoteWithFile(newNote.title, selectedFile, newNote.visibility);
       setNotes([createdNote, ...notes]);
-      setNewNote({ title: "", content: "" });
+      setNewNote({ title: "", content: "", visibility: "private" });
       setSelectedFile(null);
       setExternalUrl("");
       setShowCreateForm(false);
@@ -144,9 +163,9 @@ const Notes = () => {
 
     try {
       setCreating(true);
-      const createdNote = await notesAPI.createNoteWithExternal(newNote.title, url);
+      const createdNote = await notesAPI.createNoteWithExternal(newNote.title, url, newNote.visibility);
       setNotes([createdNote, ...notes]);
-      setNewNote({ title: "", content: "" });
+      setNewNote({ title: "", content: "", visibility: "private" });
       setExternalUrl("");
       setShowCreateForm(false);
       setFormMode("text");
@@ -169,8 +188,75 @@ const Notes = () => {
     }
   };
 
+  // Toggles a note between private and public (owner only)
+  const handleToggleVisibility = async (note) => {
+    const id = note._id || note.id;
+    const next = note.visibility === "public" ? "private" : "public";
+
+    try {
+      const { note: updated } = await notesAPI.updateNoteVisibility(id, next);
+      setNotes(notes.map((n) => (n._id === updated._id || n.id === updated.id ? updated : n)));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // Opens the edit modal pre-filled from the note (owner only).
+  // Text notes expose title + content, external-link notes title + URL, and
+  // PDF notes just the title (the file itself is not re-uploadable here).
+  const openEditNote = (note) => {
+    setEditForm({
+      title: note.title || "",
+      content: note.content || "",
+      fileUrl: note.fileUrl || "",
+    });
+    setEditingNote(note);
+  };
+
+  // Saves edits to an owned note and updates the list
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingNote) return;
+
+    if (!editForm.title.trim()) {
+      setError("Title is required");
+      return;
+    }
+
+    const id = editingNote._id || editingNote.id;
+    const updates = { title: editForm.title.trim() };
+
+    // Only the fields that apply to the note's type are sent.
+    if (!editingNote.fileUrl) {
+      updates.content = editForm.content;
+    } else if (editingNote.attachmentType === "external") {
+      updates.fileUrl = editForm.fileUrl.trim();
+    }
+
+    try {
+      setCreating(true);
+      const { note: updated } = await notesAPI.updateNote(id, updates);
+      setNotes(notes.map((n) => (n._id === updated._id || n.id === updated.id ? updated : n)));
+      setEditingNote(null);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Notes shown depend on the active tab: own notes, bookmarked notes, or the
+  // community (public) feed
+  const activeNotes =
+    activeTab === "community"
+      ? publicNotes
+      : activeTab === "bookmarked"
+      ? bookmarkedNotes
+      : notes;
+
   // Filter notes based on search term
-  const filteredNotes = notes.filter(
+  const filteredNotes = activeNotes.filter(
     (note) =>
       note.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       note.content?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -193,7 +279,7 @@ const Notes = () => {
       </div>
 
       {/* Heading & Create Button */}
-      <div className="max-w-4xl mx-auto mb-6 flex justify-between items-center">
+      <div className="max-w-4xl mx-auto mb-4 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">
           {isAuthenticated ? "Your Notes" : "Highly Recommended Notes"}
         </h1>
@@ -206,6 +292,42 @@ const Notes = () => {
           </button>
         )}
       </div>
+
+      {/* My Notes / Community Notes Tabs */}
+      {isAuthenticated && (
+        <div className="max-w-4xl mx-auto mb-6 flex border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`px-6 py-3 font-medium border-b-2 transition ${
+              activeTab === "my"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            My Notes ({notes.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("community")}
+            className={`px-6 py-3 font-medium border-b-2 transition ${
+              activeTab === "community"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            Community Notes ({publicNotes.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("bookmarked")}
+            className={`px-6 py-3 font-medium border-b-2 transition ${
+              activeTab === "bookmarked"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            Bookmarked ({bookmarkedNotes.length})
+          </button>
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -255,6 +377,39 @@ const Notes = () => {
             >
               🔗 External Link
             </button>
+          </div>
+
+          {/* Visibility Selection */}
+          <div className="mb-4">
+            <p className="block text-sm font-medium text-gray-700 mb-2">Visibility</p>
+            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg mb-2 cursor-pointer hover:bg-gray-50">
+              <input
+                type="radio"
+                name="visibility"
+                value="private"
+                checked={newNote.visibility === "private"}
+                onChange={(e) => setNewNote({ ...newNote, visibility: e.target.value })}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium text-gray-800">Private</span>
+                <span className="block text-xs text-gray-500">Only you can see this note.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="radio"
+                name="visibility"
+                value="public"
+                checked={newNote.visibility === "public"}
+                onChange={(e) => setNewNote({ ...newNote, visibility: e.target.value })}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium text-gray-800">Public</span>
+                <span className="block text-xs text-gray-500">Other students can view this note.</span>
+              </span>
+            </label>
           </div>
 
           {/* Text Note Form */}
@@ -365,8 +520,20 @@ const Notes = () => {
         </div>
       )}
 
-      {/* Loading State */}
-      {loading ? (
+      {/* Not Authenticated: prompt to log in */}
+      {!isAuthenticated ? (
+        <div className="max-w-4xl mx-auto text-center py-12 bg-white rounded-xl shadow-md">
+          <p className="text-gray-600 mb-4">
+            Login to view your notes and share notes with other students.
+          </p>
+          <Link
+            to="/login"
+            className="inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition"
+          >
+            Login
+          </Link>
+        </div>
+      ) : loading ? (
         <div className="max-w-4xl mx-auto text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading notes...</p>
@@ -390,6 +557,29 @@ const Notes = () => {
                     ) : note.fileUrl ? (
                       <span className="text-xl ml-2">📄</span>
                     ) : null}
+                  </div>
+
+                  {/* Visibility badge + author (community feed) */}
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full ${
+                        note.visibility === "public"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                      title={
+                        note.visibility === "public"
+                          ? "Visible to other students"
+                          : "Only visible to you"
+                      }
+                    >
+                      {note.visibility === "public" ? "🌐 Public" : "🔒 Private"}
+                    </span>
+                    {activeTab === "community" && (
+                      <span className="text-xs text-gray-400">
+                        By: {note.user?.username || "Unknown"}
+                      </span>
+                    )}
                   </div>
 
                   {note.attachmentType === "external" ? (
@@ -431,8 +621,42 @@ const Notes = () => {
                   <p className="text-xs text-gray-400">
                     {note.createdAt && new Date(note.createdAt).toLocaleDateString()}
                   </p>
-                  
-                  {isAuthenticated && (
+
+                  {/* Social counts (denormalized on the note, no extra queries) */}
+                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
+                    <span title="Likes">👍 {note.likeCount || 0}</span>
+                    <span title="Comments">💬 {note.commentCount || 0}</span>
+                  </div>
+
+                  {/* View link for notes by other students / bookmarked notes */}
+                  {(activeTab === "community" || activeTab === "bookmarked") && (
+                    <Link
+                      to={`/notes/${note.id || note._id}`}
+                      className="mt-3 inline-block w-full text-center bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+                    >
+                      View Note →
+                    </Link>
+                  )}
+
+                  {activeTab === "my" && (
+                    <button
+                      onClick={() => handleToggleVisibility(note)}
+                      className="mt-2 text-xs text-indigo-600 hover:text-indigo-700 font-medium mr-3"
+                    >
+                      {note.visibility === "public" ? "Make Private →" : "Make Public →"}
+                    </button>
+                  )}
+
+                  {activeTab === "my" && (
+                    <button
+                      onClick={() => openEditNote(note)}
+                      className="mt-2 text-xs text-gray-600 hover:text-gray-800 font-medium"
+                    >
+                      Edit
+                    </button>
+                  )}
+
+                  {activeTab === "my" && (
                     <button
                       onClick={() => handleDeleteNote(note.id || note._id)}
                       className="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100 transition hover:text-red-700"
@@ -446,9 +670,15 @@ const Notes = () => {
           ) : (
             <div className="max-w-4xl mx-auto text-center py-12">
               <p className="text-gray-600">
-                {searchTerm ? "No notes match your search." : "No notes available yet."}
+                {searchTerm
+                  ? "No notes match your search."
+                  : activeTab === "community"
+                  ? "No public notes shared yet. Be the first to share one!"
+                  : activeTab === "bookmarked"
+                  ? "No bookmarked notes yet. Bookmark public notes you want to keep!"
+                  : "No notes available yet."}
               </p>
-              {isAuthenticated && !searchTerm && (
+              {activeTab === "my" && !searchTerm && (
                 <button
                   onClick={() => setShowCreateForm(true)}
                   className="mt-4 text-indigo-600 hover:text-indigo-700 font-medium"
@@ -459,6 +689,76 @@ const Notes = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* Edit Note Modal (owner only) */}
+      {editingNote && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-xl w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Edit Note</h3>
+              <button
+                onClick={() => setEditingNote(null)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {!editingNote.fileUrl && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
+                  <textarea
+                    value={editForm.content}
+                    onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              {editingNote.attachmentType === "external" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">External URL</label>
+                  <input
+                    type="url"
+                    value={editForm.fileUrl}
+                    onChange={(e) => setEditForm({ ...editForm, fileUrl: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+                >
+                  {creating ? "Saving..." : "Save Changes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingNote(null)}
+                  className="px-6 py-2 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* PDF Viewer Modal */}

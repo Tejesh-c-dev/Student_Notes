@@ -32,6 +32,10 @@ const Navbar = () => {
             <button className="bg-white text-indigo-600 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50 transition font-medium">Notes</button>
           </Link>
 
+          <Link to="/public-notes">
+            <button className="bg-white text-indigo-600 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50 transition font-medium">Public Notes</button>
+          </Link>
+
           <Link to="/quiz">
             <button className="bg-white text-indigo-600 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50 transition font-medium">Quiz</button>
           </Link>

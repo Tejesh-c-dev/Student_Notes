@@ -6,6 +6,8 @@ Frontend Features
 - Global routing for pages:
   - Home
   - Notes
+  - Note Detail (/notes/:id)
+  - Public Notes (/public-notes)
   - Quiz
   - Doubts
   - PYQs
@@ -54,9 +56,24 @@ Frontend Features
 - Fetch and render user's notes from backend.
 - Search notes by title or content (client-side filtering).
 - Create note workflow with toggleable form and validation.
-- Delete note with confirmation prompt.
+- Visibility selection when creating a note (private default / public opt-in).
+- My Notes / Community Notes tabs: community feed lists other students' public notes with author names.
+- Visibility badge on each note card and an owner toggle to make a note private/public.
+- Edit own notes via inline modal (title, and content/URL depending on note type); edit controls only shown on the My Notes tab.
+- Delete note with confirmation prompt (own notes only).
 - Loading, empty, and error states handled in UI.
-- Authentication-aware UI labels and actions.
+- Authentication-aware UI labels and actions; logged-out visitors see a login prompt.
+
+7b. Public Notes Page (/public-notes)
+- Dedicated community page showing ONLY notes the backend returns as public (visibility: "public"); no frontend filtering of fetched notes.
+- Note cards show: title, student who shared it, attachment type (Text/PDF/Link), created date, public indicator, and a View button.
+- View button navigates to the note detail page.
+
+7c. Note Detail Page (/notes/:id)
+- Fetches a single note via the backend (owner-or-public access enforced server-side).
+- Shows title, shared-by username, visibility badge, created date, and attachment type.
+- Renders body by type: text content, inline PDF viewer with pagination (existing react-pdf setup), or an external link opened in a new tab (Google Drive links detected and opened in Drive).
+- Handles loading, error, and unauthorized/404 states with a link back to Public Notes.
 
 8. Quiz Experience
 - Full quiz workflow in one page with multiple views:
