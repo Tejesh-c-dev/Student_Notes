@@ -6,13 +6,29 @@
 
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { notesAPI } from "../api";
+import { notesAPI, resolveFileUrl } from "../api";
 import { useAuth } from "../../context/AuthContext";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 
-// Set PDF worker for react-pdf
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Set PDF worker for react-pdf.
+// pdfjs-dist 4.x loads the worker as an ES module, so the legacy cdnjs
+// pdf.worker.min.js URL fails to import (that script is not an ES module).
+// Vite bundles the locally installed worker asset via the `new URL` form.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
+
+// Recognizes Google Drive links so we open them in the Drive viewer instead of
+// assuming a /view URL is a direct, renderable PDF.
+const isGoogleDriveUrl = (url) => {
+  try {
+    return ["drive.google.com", "docs.google.com"].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+};
 
 const Notes = () => {
   // State for notes data
@@ -26,6 +42,7 @@ const Notes = () => {
   const [formMode, setFormMode] = useState("text"); // "text" or "pdf"
   const [newNote, setNewNote] = useState({ title: "", content: "" });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [externalUrl, setExternalUrl] = useState("");
   const [creating, setCreating] = useState(false);
   
   // State for PDF viewer modal
@@ -67,6 +84,7 @@ const Notes = () => {
       const createdNote = await notesAPI.createNote(newNote.title, newNote.content);
       setNotes([createdNote, ...notes]);
       setNewNote({ title: "", content: "" });
+      setExternalUrl("");
       setShowCreateForm(false);
       setFormMode("text");
     } catch (err) {
@@ -90,6 +108,46 @@ const Notes = () => {
       setNotes([createdNote, ...notes]);
       setNewNote({ title: "", content: "" });
       setSelectedFile(null);
+      setExternalUrl("");
+      setShowCreateForm(false);
+      setFormMode("text");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Creates a new note from an external link (Google Drive, OneDrive, Dropbox, etc.)
+  const handleCreateExternalNote = async (e) => {
+    e.preventDefault();
+    const url = externalUrl.trim();
+
+    if (!newNote.title) {
+      setError("Title is required");
+      return;
+    }
+    if (!url) {
+      setError("External URL is required");
+      return;
+    }
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        setError("Please provide a valid http(s) URL");
+        return;
+      }
+    } catch {
+      setError("Please provide a valid URL");
+      return;
+    }
+
+    try {
+      setCreating(true);
+      const createdNote = await notesAPI.createNoteWithExternal(newNote.title, url);
+      setNotes([createdNote, ...notes]);
+      setNewNote({ title: "", content: "" });
+      setExternalUrl("");
       setShowCreateForm(false);
       setFormMode("text");
     } catch (err) {
@@ -186,6 +244,17 @@ const Notes = () => {
             >
               📄 PDF Upload
             </button>
+            <button
+              type="button"
+              onClick={() => setFormMode("external")}
+              className={`px-4 py-2 rounded-lg transition ${
+                formMode === "external"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+              }`}
+            >
+              🔗 External Link
+            </button>
           </div>
 
           {/* Text Note Form */}
@@ -257,6 +326,42 @@ const Notes = () => {
               </button>
             </form>
           )}
+
+          {/* External Link Form */}
+          {formMode === "external" && (
+            <form onSubmit={handleCreateExternalNote} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={newNote.title}
+                  onChange={(e) => setNewNote({ ...newNote, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Enter note title"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">External URL</label>
+                <input
+                  type="url"
+                  value={externalUrl}
+                  onChange={(e) => setExternalUrl(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="https://drive.google.com/file/d/FILE_ID/view"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Paste a link to a PDF or document (Google Drive, OneDrive, Dropbox, or any public http(s) URL).
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={creating}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+              >
+                {creating ? "Creating..." : "Create Note"}
+              </button>
+            </form>
+          )}
         </div>
       )}
 
@@ -280,18 +385,38 @@ const Notes = () => {
                     <h2 className="text-lg font-semibold text-gray-800 flex-1">
                       {note.title}
                     </h2>
-                    {note.fileUrl && (
+                    {note.attachmentType === "external" ? (
+                      <span className="text-xl ml-2" title="External link">🔗</span>
+                    ) : note.fileUrl ? (
                       <span className="text-xl ml-2">📄</span>
-                    )}
+                    ) : null}
                   </div>
-                  
-                  {note.fileUrl ? (
+
+                  {note.attachmentType === "external" ? (
+                    <div className="mb-3">
+                      <p className="text-sm text-gray-600 mb-2">
+                        {isGoogleDriveUrl(note.fileUrl) ? "Google Drive link" : "External link"}
+                      </p>
+                      {/* Open the original URL in a new tab. External links are
+                          never forced through the PDF.js viewer (Google Drive
+                          /view URLs are web pages, not direct PDFs, and
+                          cross-origin PDFs would fail on CORS). */}
+                      <a
+                        href={note.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 text-sm font-medium hover:text-indigo-700"
+                      >
+                        Open source →
+                      </a>
+                    </div>
+                  ) : note.fileUrl ? (
                     <div className="mb-3">
                       <p className="text-sm text-gray-600 mb-2">
                         PDF file · {note.extractedText ? "Text extracted" : "No text"}
                       </p>
                       <button
-                        onClick={() => setSelectedPDF(`http://localhost:3000${note.fileUrl}`)}
+                        onClick={() => setSelectedPDF(resolveFileUrl(note.fileUrl))}
                         className="text-indigo-600 text-sm font-medium hover:text-indigo-700"
                       >
                         View PDF →
@@ -372,7 +497,6 @@ const Notes = () => {
                    <Page pageNumber={pdfPageNum} />
                  </Document>
                )}
-                 setPdfError(null);
 
               {/* Pagination Controls */}
               {pdfNumPages && (

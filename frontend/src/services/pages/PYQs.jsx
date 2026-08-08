@@ -6,13 +6,19 @@
 
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { pyqsAPI } from "../api";
+import { pyqsAPI, resolveFileUrl } from "../api";
 import { useAuth } from "../../context/AuthContext";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 
-// Set PDF worker for react-pdf
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Set PDF worker for react-pdf.
+// pdfjs-dist 4.x loads the worker as an ES module, so the legacy cdnjs
+// pdf.worker.min.js URL fails to import (that script is not an ES module).
+// Vite bundles the locally installed worker asset via the `new URL` form.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 const PYQs = () => {
   // State for PYQs data
@@ -61,10 +67,11 @@ const PYQs = () => {
       setLoading(true);
       const params = {
         ...filters,
-        search: searchTerm
+        search: searchTerm,
+        limit: 1000
       };
       const data = await pyqsAPI.getAllPYQs(params);
-      setPyqs(data);
+      setPyqs(data.pyqs || []);
       setCurrentPage(1);
     } catch (err) {
       setError(err.message);
@@ -96,7 +103,7 @@ const PYQs = () => {
         uploadForm.examType,
         uploadForm.file
       );
-      setPyqs([newPYQ, ...pyqs]);
+      setPyqs([newPYQ.pyq, ...pyqs]);
       setUploadForm({ title: "", subject: "", year: "", examType: "", file: null });
       setError("");
       setShowUploadForm(false);
@@ -327,7 +334,7 @@ const PYQs = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          setSelectedPDF(`http://localhost:3000${pyq.fileUrl}`);
+                          setSelectedPDF(resolveFileUrl(pyq.fileUrl));
                           setViewingPYQTitle(pyq.title);
                           setPdfPageNum(1);
                           setPdfNumPages(null);

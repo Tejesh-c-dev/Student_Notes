@@ -26,6 +26,11 @@ const noteSchema = new Schema(
       type: String,
       default: null
     },
+    attachmentType: {
+      type: String,
+      enum: ["upload", "external"],
+      default: "upload"
+    },
     extractedText: {
       type: String,
       default: null

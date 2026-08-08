@@ -4,13 +4,20 @@
  * All operations are scoped to the authenticated user
  */
 
+const fs = require("fs/promises");
 const { Note } = require("../models");
 const asyncHandler = require("../utilits/asyncHandler");
 const { extractTextFromPDF } = require("../utilits/pdfExtract");
+const { isHttpUrl } = require("../utilits/validators");
+const { getFileUrl, filePathFor } = require("../middleware/upload");
 
-// POST /api/notes - Creates a new note for the user (supports text or PDF)
+// POST /api/notes - Creates a new note for the user
+// Supports three modes:
+//   1. text     -> { title, content }                          (attachmentType omitted/"upload", no file)
+//   2. PDF      -> multipart { title, file }                   (attachmentType omitted/"upload", with file)
+//   3. external -> { title, fileUrl, attachmentType: "external" }
 const createNote = asyncHandler(async (req, res) => {
-  const { title, content } = req.body;
+  const { title, content, attachmentType, fileUrl } = req.body;
   const file = req.file;
 
   // Title is always required
@@ -18,23 +25,45 @@ const createNote = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Title is required" });
   }
 
-  // Either content OR file must be provided
-  if (!content && !file) {
+  const type = attachmentType === "external" ? "external" : "upload";
+
+  if (type === "external") {
+    // External attachments must provide a real http(s) URL and nothing else.
+    if (!fileUrl || typeof fileUrl !== "string" || !fileUrl.trim()) {
+      return res.status(400).json({ message: "An external URL is required" });
+    }
+    if (!isHttpUrl(fileUrl.trim())) {
+      return res.status(400).json({ message: "Please provide a valid http(s) URL" });
+    }
+    if (file) {
+      // Multer already saved the uploaded file; remove it so it isn't orphaned.
+      fs.unlink(file.path).catch(() => {});
+      return res.status(400).json({ message: "Cannot combine a PDF upload with an external URL" });
+    }
+  } else if (!content && !file) {
+    // Upload/text mode: either content or a PDF file must be provided.
     return res.status(400).json({ message: "Either content or a PDF file is required" });
   }
 
   const noteData = {
     title,
-    userId: req.user
+    userId: req.user,
+    attachmentType: type
   };
 
-  // If file is provided, handle PDF upload
-  if (file) {
-    noteData.fileUrl = `/uploads/${file.filename}`;
+  if (type === "external") {
+    // Store the original external URL as-is. fileType marks it as a link so the
+    // UI can open it in a new tab instead of forcing it through the PDF viewer.
+    noteData.fileUrl = fileUrl.trim();
+    noteData.fileType = 'link';
+  } else if (file) {
+    // If file is provided, handle PDF upload
+    noteData.fileUrl = getFileUrl(file.filename);
     noteData.fileType = 'pdf';
-    
-    // Extract text from PDF
-    const extractedText = await extractTextFromPDF(file.buffer);
+
+    // Extract text from PDF (diskStorage writes the file to disk, so file.path
+    // is available while file.buffer is not)
+    const extractedText = await extractTextFromPDF(file.path);
     noteData.extractedText = extractedText;
   } else {
     // Otherwise use plain text content
@@ -73,6 +102,20 @@ const deleteNote = asyncHandler(async (req, res) => {
 
   if (!note) {
     return res.status(404).json({ message: "Note not found" });
+  }
+
+  // Delete the physical PDF file if the note had one, so we don't orphan files.
+  // External links point to a remote resource (e.g. Google Drive) and must not
+  // be touched. Best-effort: ignore missing files and only log real failures.
+  const filePath = note.attachmentType !== "external" ? filePathFor(note.fileUrl) : null;
+  if (filePath) {
+    try {
+      await fs.unlink(filePath);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.error('Failed to delete PDF file:', err.message);
+      }
+    }
   }
 
   await note.deleteOne();

@@ -1,9 +1,9 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('fs/promises');
 const { PYQ, User } = require('../models');
 const { extractTextFromPDF } = require('../utilits/pdfExtract');
 const asyncHandler = require('../utilits/asyncHandler');
 const { escapeRegex, withPopulatedUser } = require('../utilits/mongoHelpers');
+const { getFileUrl, filePathFor } = require('../middleware/upload');
 
 /**
  * PYQ Controller
@@ -29,8 +29,9 @@ const uploadPYQ = asyncHandler(async (req, res) => {
     });
   }
 
-  // Extract text from PDF
-  const extractedText = await extractTextFromPDF(file.buffer);
+  // Extract text from PDF (diskStorage writes the file to disk, so file.path
+  // is available while file.buffer is not)
+  const extractedText = await extractTextFromPDF(file.path);
 
   // Create PYQ record
   const pyq = await PYQ.create({
@@ -38,7 +39,7 @@ const uploadPYQ = asyncHandler(async (req, res) => {
     subject,
     year: parseInt(year, 10),
     examType,
-    fileUrl: `/uploads/${file.filename}`,
+    fileUrl: getFileUrl(file.filename),
     extractedText,
     uploadedBy: req.user
   });
@@ -117,14 +118,16 @@ const deletePYQ = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: 'PYQ not found or access denied' });
   }
 
-  // Delete physical file from /uploads folder
-  if (pyq.fileUrl) {
-    const filename = path.basename(pyq.fileUrl);
-    const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
-    const filepath = path.join(uploadsDir, filename);
-
-    if (fs.existsSync(filepath)) {
-      fs.unlinkSync(filepath);
+  // Delete physical file from the uploads directory.
+  // Best-effort: ignore missing files and only log real failures.
+  const filePath = filePathFor(pyq.fileUrl);
+  if (filePath) {
+    try {
+      await fs.unlink(filePath);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.error('Failed to delete PDF file:', err.message);
+      }
     }
   }
 

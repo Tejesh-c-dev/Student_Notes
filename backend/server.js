@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const router = require('./routes/router');
 const { connectDB } = require('./config/db');
 const errorHandler = require("./middleware/errorHandler");
+const { uploadsDir, ensureUploadsDir } = require('./middleware/upload');
 
 const app = express(); // Initialize Express application
 
@@ -48,8 +49,9 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // Serve uploaded files as static assets
-const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Ensure the uploads directory exists before serving it (multer does not create it)
+ensureUploadsDir();
+app.use('/uploads', express.static(uploadsDir));
 
 // ==================== API ROUTES ====================
 // Notes routes - protected with auth middleware

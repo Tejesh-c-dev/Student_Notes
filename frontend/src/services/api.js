@@ -159,6 +159,19 @@ export const notesAPI = {
     return data;
   },
 
+  createNoteWithExternal: async (title, fileUrl) => {
+    const response = await fetch(`${API_BASE_URL}/notes`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ title, fileUrl, attachmentType: 'external' }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to create note with external link');
+    }
+    return data;
+  },
+
   deleteNote: async (id) => {
     const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
       method: 'DELETE',
@@ -569,4 +582,22 @@ export const pyqsAPI = {
     }
     return data;
   },
+};
+
+/**
+ * Builds a browser-accessible URL for an uploaded file (e.g. a PDF).
+ * Accepts the portable reference stored in the DB (/uploads/<name>), an
+ * absolute URL, or a legacy absolute local path (e.g. C:\Student Notes\uploads\...),
+ * and returns a URL the browser can fetch from the backend.
+ */
+export const resolveFileUrl = (fileUrl) => {
+  if (!fileUrl) return '';
+  // Already a full URL — use as-is
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  // Normalize Windows backslashes, strip a drive letter and query string
+  const clean = fileUrl.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '').split('?')[0];
+  const filename = clean.split('/').filter(Boolean).pop();
+  if (!filename) return '';
+  const origin = new URL(API_BASE_URL).origin;
+  return `${origin}/uploads/${encodeURIComponent(filename)}`;
 };
